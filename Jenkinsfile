@@ -1,9 +1,5 @@
 node() {
     deleteDir()
-    sh 'echo ************************'
-    sh 'pwd'
-    sh 'ls -al'
-    sh 'echo ************************'
     stage 'Checkout'
     dir('source'){
         git url: 'https://github.com/LiveAlone/SpringBootStander.git', branch: 'master'
@@ -11,7 +7,7 @@ node() {
         sh 'mvn clean package -Dmaven.test.skip=true'
         dir('target'){
             stage 'deploy'
-            sh 'ls -al'
+            sh 'java -jar boot-demo-1.0-SNAPSHOT.jar'
         }
     }
 }
