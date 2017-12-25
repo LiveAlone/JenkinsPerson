@@ -1,4 +1,11 @@
 node() {
+    sh 'echo ****************** current dir before delete checkout'
+    sh 'ls -al'
+    sh 'echo *******************************************'
+    deleteDir()
+    sh 'echo ****************** current dir after delete checkout'
+    sh 'ls -al'
+    sh 'echo *******************************************'
     stage 'Checkout'
     dir('source'){
         sh 'echo ****************** current dir before delete'
