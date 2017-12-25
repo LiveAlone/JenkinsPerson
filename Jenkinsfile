@@ -10,7 +10,7 @@ pipeline {
         stage('deploy'){
             steps{
                 sh 'java -version'
-                sh 'author yaoqijun hehe'
+                sh 'echo author yaoqijun hehe'
             }
         }
     }
