@@ -1,7 +1,7 @@
 pipeline {
     agent any
     stages {
-        stages('Clean'){
+        stage('Clean'){
             steps{
                 sh 'rm -rf SpringBootStander'
             }
