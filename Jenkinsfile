@@ -1,6 +1,11 @@
 pipeline {
     agent any
     stages {
+        stages('Clean'){
+            steps{
+                sh 'rm -rf SpringBootStander'
+            }
+        }
         stage('Checkout'){
             steps{
                 sh 'git clone https://github.com/LiveAlone/SpringBootStander.git'
