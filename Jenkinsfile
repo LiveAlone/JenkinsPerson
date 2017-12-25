@@ -2,7 +2,9 @@ pipeline {
     agent any
     stages {
         stage('Checkout'){
-            sh 'git clone https://github.com/LiveAlone/SpringBootStander.git'
+            steps{
+                sh 'git clone https://github.com/LiveAlone/SpringBootStander.git'
+            }
         }
         stage('Build') {
             steps {
