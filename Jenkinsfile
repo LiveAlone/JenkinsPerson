@@ -8,7 +8,7 @@ pipeline {
         }
         stage('Build') {
             steps {
-                sh 'll'
+                sh 'ls -al'
             }
         }
         stage('deploy'){
