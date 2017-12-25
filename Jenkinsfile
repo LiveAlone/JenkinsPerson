@@ -13,7 +13,8 @@ pipeline {
         }
         stage('Build') {
             steps {
-                sh 'ls -al'
+                sh 'cd SpringBootStander'
+                sh 'mvn clean package install -Dmaven.test.skip=true'
             }
         }
         stage('deploy'){
