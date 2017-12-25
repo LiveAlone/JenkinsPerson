@@ -1,0 +1,308 @@
+node('master'){
+        stage "Init"
+        if ( params.DockerURL == "" || params.appType == "" || params.context == "" || params.envType == "" || params.poolcode == "" ){
+                error 'Args Null'
+        }
+        if ( params.platform == "docker" ){
+                echo "deployment docker"
+        }else {
+            if ( params.ServerIP == "" ) {
+                 error 'ServerIP Args Null'
+            }
+            echo "serverip:$ServerIP"
+        }
+        
+        echo "dockerurl:$DockerURL"
+        echo "appType:$appType"
+        echo "context:$context"
+        echo "poolcode:$poolcode"
+        echo "platform:$platform"
+        buildversion=DockerURL.split(':')[1]
+        echo "buildversion:$buildversion"
+        stage "Deploy"
+        switch(appType){
+                case "app":
+                        DeployApp()
+                        break
+                case "nettyapp":
+                        DeployNettyApp()
+                        break
+                case "nodejs":
+                        DeployNodejs()
+                        break
+                case "static":
+                        DeployStatic()
+                        break
+                case "fronth5":
+                        DeployFronth5()
+                        break
+                default :  error 'Error appType'
+        }
+}
+
+def SSH_CMD(String ip,String cmd,Boolean IsOpsadmin){
+        if ( IsOpsadmin ){
+                // connetion
+                connt="ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=no -tt -i ~/.ssh/opsadmin_id_rsa opsadmin@${ip} "
+                // linuxreleaseversion >= rhel7 or centos7
+                linuxreleaseversion = "uname -r|cut -c1"
+                releaseout = sh returnStdout: true, script: "$connt '$linuxreleaseversion'"
+                if (releaseout.toInteger()< 3){
+                        error "VM is not docker !"
+                }
+                // root key
+                rootkey = "ssh-rsa AAAAB3NzaC1yc2EAAAABIwAAAQEAxxmSYxLP8pU+Sixa7kFT7ysVqAyfyZj7KXzTCUmY4GQ3FNlEQmpyPYLgw2ly8+9AOX/rI6u+hqZseFFNHJlKIz9D7PS7QyOiiDADzE7IRJBzOdZ73O+Ak1CEyBnrHQ2O3+KDftjkaGMK7AHy7Ipj4ixU1V0cULWbft3matr7Dj0x0OmcKfMc6vw24uFBi0kKggdEASenzmVCN5N1hRN/QBi7W0GSi3vNhG/G9RavZ6ptSbIaIf/2ULY8NfchN03epQwX6MEbBLng557R6nBgiMalIlDOnorEOlteysxuzWxusHHsgCgxqulc4uZm66ihrJrNbrjoAzl+r0z0cCK+CQ== opsadmin@pxe.local"
+                // install root key
+                sh script: "$connt 'sudo sh -c \"install -d -m 700 -o root -g root /root/.ssh \"' "
+                sh script: "$connt 'sudo sh -c \"grep opsadmin /root/.ssh/authorized_keys &>/dev/null || echo $rootkey >>/root/.ssh/authorized_keys\" ' "
+        } else {
+                connt="ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=no -i ~/.ssh/opsadmin_id_rsa root@${ip} "
+                echo "cmd : $cmd"
+                sh "$connt '$cmd'" 
+        }
+}
+
+def DeployApp(){
+        if ( platform == "docker" ){
+                DockerDeploy()
+        }else if ( platform == "vm" ){
+                cmd="yum clean all ;rpm -qa |grep tomcat -q || yum install qingqing-tomcat qingqing-jdk -y ; docker run $DockerURL /bin/hostname && rm -fr /home/qingqing/webapps/${context}* /home/qingqing/data/conf/* ; docker cp `docker ps -a|grep CONTAINER -v |head -n1 |cut -c 1-12`:/home/qingqing/webapps/${context}.war /home/qingqing/webapps/  && cd /tmp/ && sed -i \"s/envType=.*/envType=$envType/g\" /etc/sysconfig/tomcat ; grep -q POOL_CODE /etc/sysconfig/tomcat || echo POOL_CODE=$poolcode >> /etc/sysconfig/tomcat ;  systemctl  restart tomcat ; sleep 3; systemctl status tomcat "
+                echo cmd
+                VMDeploy(cmd)
+        }else {
+                if ( context == "imgsvc" ){
+                        dockercmd = "docker pull $DockerURL && containers=`docker ps  |grep CONTAINER -v |wc -l` ; if [ \$containers -ne 0 ] ;then docker rm -f  `docker ps  |grep CONTAINER -v |cut -c 1-12` ; fi ; docker run -d -e envType=$envType -p 8081:8080 -v /home/qingqing/data/imgs:/home/qingqing/data/imgs $DockerURL  && sleep 5 &&  docker ps "
+                }else if ( context == "collector" ){
+                        dockercmd = "docker pull $DockerURL && containers=`docker ps  |grep CONTAINER -v |wc -l` ; if [ \$containers -ne 0 ] ;then docker rm -f  `docker ps  |grep CONTAINER -v |cut -c 1-12` ; fi ; docker run -d -e envType=$envType -p 8081:8080 -v /home/qingqing/data/collector:/home/qingqing/data/collector $DockerURL  && sleep 5 &&  docker ps "
+                }else {
+                        dockercmd = "docker pull $DockerURL && containers=`docker ps  |grep CONTAINER -v |wc -l` ; if [ \$containers -ne 0 ] ;then docker rm -f  `docker ps  |grep CONTAINER -v |cut -c 1-12` ; fi ; docker run -d -e envType=$envType -p 8081:8080 $DockerURL  && sleep 5 &&  docker ps "
+                }
+                echo dockercmd
+                vmcmd = "yum clean all ;rpm -qa |grep tomcat -q || yum install qingqing-tomcat qingqing-jdk -y ;if [ `docker ps|wc -l ` -eq 2 ] ;then rm -fr /home/qingqing/webapps/${context}* /home/qingqing/data/conf/* ; docker cp `docker ps |grep CONTAINER -v |cut -c 1-12`:/home/qingqing/webapps/${context}.war /home/qingqing/webapps/  && cd /tmp/ && sed -i \"s/envType=.*/envType=$envType/g\" /etc/sysconfig/tomcat ; grep -q POOL_CODE /etc/sysconfig/tomcat || echo POOL_CODE=$poolcode >> /etc/sysconfig/tomcat ;  systemctl  restart tomcat ; sleep 3; systemctl status tomcat ; else echo \"docker container number not is 1\" && exit 2; fi "
+                echo vmcmd
+                VMDockerDeploy(dockercmd,vmcmd)
+        }
+}
+
+def DeployNettyApp(){
+        if ( platform == "docker" ){
+                DockerDeploy()
+        }else if ( platform == "vm" ){
+                cmd="yum clean all ;rpm -qa |grep jdk -q || yum install qingqing-jdk -y ; docker run $DockerURL /bin/hostname && rm -fr /home/qingqing/webapps/${context}* /home/qingqing/data/conf/* ; docker cp `docker ps |grep CONTAINER -v |cut -c 1-12`:/home/qingqing/webapps/${context} /home/qingqing/webapps/ ; cd /tmp/ ; envType=$envType POOL_CODE=$poolcode /home/qingqing/netty-apps.sh restart"
+                echo cmd
+                VMDeploy(cmd)
+        }else {
+                dockercmd = "docker pull $DockerURL && containers=`docker ps  |grep CONTAINER -v |wc -l` ; if [ \$containers -ne 0 ] ;then docker rm -f  `docker ps  |grep CONTAINER -v |cut -c 1-12` ; fi ; docker run -d -e envType=$envType -p 8081:8080 $DockerURL  && sleep 5 &&  docker ps "
+                echo dockercmd
+       
+                vmcmd = "yum clean all ;rpm -qa |grep jdk -q || yum install qingqing-jdk -y ;if [ `docker ps|wc -l ` -eq 2 ] ;then rm -fr /home/qingqing/webapps/${context}* /home/qingqing/data/conf/* ; docker cp `docker ps |grep CONTAINER -v |cut -c 1-12`:/home/qingqing/webapps/${context} /home/qingqing/webapps/ ; cd /tmp/ ; envType=$envType POOL_CODE=$poolcode /home/qingqing/netty-apps.sh restart ; else echo \"docker container number not is 1\" && exit 2; fi "
+                echo vmcmd
+                VMDockerDeploy(dockercmd,vmcmd)
+        }
+}
+
+def DeployNodejs(){
+        if ( platform == "docker" ){
+                DockerDeploy()
+        }else if ( platform == "vm" ){
+                cmd = "yum clean all ;rpm -qa |grep nodejs -q || yum install qingqing-nodejs -y  ; docker run $DockerURL /bin/hostname && rm -fr /home/qingqing/webapps /home/qingqing/data/conf/* ;docker cp `docker ps |grep CONTAINER -v |cut -c 1-12`:/home/qingqing/webapps /home/qingqing/webapps && && cd /tmp/ && sed -i \"s/envType=.*/envType=$envType/g\" /etc/nodejs.conf  && chown qingqing: -R /home/qingqing/webapps && systemctl restart nodejs  "
+                echo cmd
+                VMDeploy(cmd)
+        }else {
+                dockercmd="docker pull $DockerURL && containers=`docker ps  |grep CONTAINER -v |wc -l` ; if [ \$containers -ne 0 ] ;then docker rm -f  `docker ps  |grep CONTAINER -v |cut -c 1-12` ; fi ; docker run -d -e envType=$envType -p 8081:8080 $DockerURL  && sleep 5 &&  docker ps "
+                echo dockercmd
+
+                vmcmd = "yum clean all ;rpm -qa |grep nodejs -q || yum install qingqing-nodejs -y ; if [ `docker ps|wc -l ` -eq 2 ] ;then rm -fr /home/qingqing/webapps -fr ;docker cp `docker ps |grep CONTAINER -v |cut -c 1-12`:/home/qingqing/webapps /home/qingqing/webapps && cd /tmp/ && sed -i \"s/envType=.*/envType=$envType/g\" /etc/nodejs.conf  && chown qingqing: -R /home/qingqing/webapps && systemctl restart nodejs ; sleep 3; systemctl status nodejs; else echo \"docker container number not is 1 \" && exit 2; fi "
+                echo vmcmd
+                VMDockerDeploy(dockercmd,vmcmd)
+        }
+}
+
+def DeployStatic(){
+        SSH_CMD(params.ServerIP,'',true)
+        cmd = "docker pull $DockerURL && containers=`docker ps  |grep CONTAINER -v |grep $context |wc -l` ; if [ \$containers -ne 0 ] ;then docker rm -f  `docker ps  |grep CONTAINER -v |grep $context |cut -c 1-12` ; fi ; docker run -d -p 8081:80 -v /data1/$context:/home/qingqing/webapps/$context $DockerURL  && sleep 3 &&  docker ps "
+        SSH_CMD(params.ServerIP,cmd,false)
+        echo "nfs shared "
+}
+
+def DeployFronth5(){
+        SSH_CMD(params.ServerIP,'',true)
+        cmd = "docker pull $DockerURL && containers=`docker ps  |grep CONTAINER -v | grep fronth5 |wc -l` ; if [ \$containers -ne 0 ] ;then docker rm -f  `docker ps  |grep CONTAINER -v |grep fronth5 |cut -c 1-12` ; fi ; docker run -d -p 8082:80 $DockerURL  && sleep 3 &&  docker ps "
+        SSH_CMD(params.ServerIP,cmd,false)
+
+        cmd1 = "if [ `docker ps | grep fronth5 |wc -l ` -eq 1 ] ;then mkdir -p /home/qingqing/data/tmp/ && docker cp `docker ps |grep CONTAINER -v| grep fronth5 |cut -c 1-12`:/home/qingqing/webapps /home/qingqing/data/tmp/$buildversion && ln -snf  /home/qingqing/data/tmp/$buildversion /home/qingqing/webapps/${context} ; else echo \"docker container number not is 1\" && exit 2; fi "
+        echo cmd1
+        SSH_CMD(params.ServerIP,cmd1,false)
+}
+
+def VMDeploy(String vmcmd){
+        SSH_CMD(params.ServerIP,'',true)
+        echo "Deploy VM"
+        SSH_CMD(params.ServerIP,vmcmd,false)
+        //clean docker image =< 10
+        cmd="dcount=`docker images |wc -l` ; if [ \$dcount -gt 11 ];then  delimg=`expr \$dcount - 11` ; docker images |tail -n \$delimg |cut -d \" \" -f7 |xargs docker rmi -f ;fi"
+        SSH_CMD(params.ServerIP,cmd,false)
+}
+
+def VMDockerDeploy(String dockercmd,String vmcmd){
+        SSH_CMD(params.ServerIP,'',true)
+        echo "Deploy docker"
+        SSH_CMD(params.ServerIP,dockercmd,false)
+        echo "Deploy VM"
+        SSH_CMD(params.ServerIP,vmcmd,false)
+        //clean docker image =< 10
+        cmd="dcount=`docker images |wc -l` ; if [ \$dcount -gt 11 ];then  delimg=`expr \$dcount - 11` ; docker images |tail -n \$delimg |cut -d \" \" -f7 |xargs docker rmi -f ;fi"
+        SSH_CMD(params.ServerIP,cmd,false)
+}
+
+def K8sFiles(){
+//        k8sNamespaces="""
+//apiVersion: v1
+//kind: Namespace
+//metadata:
+//  name: ${envType}
+//"""
+
+
+        k8sDeployment="""
+---
+apiVersion: apps/v1beta1
+kind: Deployment
+metadata:
+  name: ${context}
+  labels:
+    app: ${context}
+  namespace: ${envType}
+spec:
+  strategy:
+    type: RollingUpdate
+  replicas: 1
+  revisionHistoryLimit: 0
+  selector:
+    matchLabels:
+      app: ${context}
+  template:
+    metadata:
+      labels:
+        app: ${context}
+    spec:
+      terminationGracePeriodSeconds: 30
+      containers:
+      - name: ${context}
+        image: $DockerURL
+        env:
+            - name: envType
+              value: "$envType"
+        livenessProbe:
+          failureThreshold: 3
+          initialDelaySeconds: 5
+          periodSeconds: 5
+          successThreshold: 1
+          tcpSocket:
+            port: 8080
+          timeoutSeconds: 1
+        ports:
+        - containerPort: 8080
+          name: http
+          protocol: TCP
+        resources:
+          requests:
+            cpu: 100m
+            memory: 2800Mi
+"""
+
+        k8sService="""
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: ${context}
+  namespace: ${envType}
+  labels:
+    app: ${context}
+spec:
+  ports:
+  - port: 8080
+    targetPort: 8080
+  selector:
+    app: ${context}
+  clusterIP: None
+  type: ClusterIP
+  sessionAffinity: None
+
+"""
+
+        k8sIngress="""
+---
+apiVersion: extensions/v1beta1
+kind: Ingress
+metadata:
+  name: ${context}
+  namespace: ${envType}
+spec:
+  rules:
+  - host: ${context}.${envType}.idc.cedu.cn
+    http:
+      paths:
+      - path: /
+        backend:
+          serviceName: ${context}
+          servicePort: 8080
+"""
+        k8sIngressgw="""
+---
+apiVersion: extensions/v1beta1
+kind: Ingress
+metadata:
+  name: ${context}-gw
+  namespace: ${envType}
+spec:
+  rules:
+  - host: gateway.${envType}.idc.cedu.cn
+    http:
+      paths:
+      - path: /${context}
+        backend:
+          serviceName: ${context}
+          servicePort: 8080
+"""
+        //K8sNamespacesStatus = sh returnStdout: true, script: "curl http://kube-api-office.idc.cedu.cn:8080/api/v1/namespaces/${envType} -s -o /dev/null -w %{http_code}"
+        //if (K8sNamespacesStatus.toInteger() == 200){
+        //        k8sNamespaces=""
+        //}   
+        K8sServerStatus = sh returnStdout: true, script: "curl http://kube-api-office.idc.cedu.cn:8080/api/v1/namespaces/${envType}/services/${context} -s -o /dev/null -w %{http_code}"
+        if (K8sServerStatus.toInteger() == 200){
+                k8sService=""
+        }
+        K8sIngressStatus= sh returnStdout: true, script: "curl http://kube-api-office.idc.cedu.cn:8080/apis/extensions/v1beta1/namespaces/${envType}/ingresses/${context} -s -o /dev/null -w %{http_code}"
+        if (K8sIngressStatus.toInteger() == 200){
+                k8sIngress=""
+        }
+        K8sIngressgwStatus= sh returnStdout: true, script: "curl http://kube-api-office.idc.cedu.cn:8080/apis/extensions/v1beta1/namespaces/${envType}/ingresses/${context}-gw -s -o /dev/null -w %{http_code}"
+        if (K8sIngressgwStatus.toInteger() == 200){
+                k8sIngressgw=""
+        }  
+        writeFile encoding: 'utf-8', file: "${context}-${envType}-${BUILD_TIMESTAMP}-${BUILD_NUMBER}.yaml", text: """
+$k8sDeployment
+
+$k8sService
+
+$k8sIngress
+
+$k8sIngressgw
+"""
+        sh "cat ${context}-${envType}-${BUILD_TIMESTAMP}-${BUILD_NUMBER}.yaml"
+}
+
+def DockerDeploy(){
+        K8sFiles()
+		K8sDeploymentStatus = sh returnStdout: true, script: "curl http://kube-api-office.idc.cedu.cn:8080/apis/extensions/v1beta1/namespaces/${envType}/deployments/${context} -s -o /dev/null -w %{http_code}"
+		if (K8sDeploymentStatus.toInteger() == 200){
+			sh script: "kubectl -s http://kube-api-office.idc.cedu.cn:8080 replace --force -f ${context}-${envType}-${BUILD_TIMESTAMP}-${BUILD_NUMBER}.yaml"
+		}else {
+			sh script: "kubectl -s http://kube-api-office.idc.cedu.cn:8080 create -f ${context}-${envType}-${BUILD_TIMESTAMP}-${BUILD_NUMBER}.yaml"
+		}
+        echo "Clean history k8s yaml"
+        sh script: "find ./ -type f -ctime +20 |grep yaml |xargs rm -f"
+        echo "Please see: http://kube-ui-office.changingedu.com/#!/deployment/${envType}/${context}?namespace=${envType}"
+}

@@ -1,0 +1,167 @@
+node() {
+    stage 'Checkout'
+    dir('dockerfile'){
+        // clean dockerfile dir
+        deleteDir()
+        git url: 'http://gitlab/ops/dockerfile.git', credentialsId: '2d430f91-dfff-4b0a-85a9-a6eb2ee9f09a'
+    }
+    dir('source'){
+       // clean source dir
+       deleteDir()
+       // source code
+       git url: 'http://gitlab/online/live-static.git', branch: "${branch}", credentialsId: '2d430f91-dfff-4b0a-85a9-a6eb2ee9f09a'
+       stage 'Chkconfig'
+       poolcode = "${poolcode}"
+       buildversion = "${BUILD_TIMESTAMP}-${BUILD_NUMBER}"
+       Filename = "${context}-${version}-${buildversion}.zip"
+       sh "/usr/local/nodejs/bin/node --version"
+       // set build username
+       wrap([$class: 'BuildUser']) {
+           Username = env.BUILD_USER_ID
+       }
+       echo "poolCode:$poolcode"
+       echo "appType:$apptype"
+       echo "version:$version"
+       echo "context:$context"
+       echo "branch:$branch"
+       echo "buildVersion:$buildversion"
+       echo "envType:$envtype"
+
+        if (params.platform == null ){
+           platform= "vmdocker"
+        }
+       echo "buildUser:$Username"
+
+       stage 'Building'
+       // clean build dir  
+       dir('.build'){
+          deleteDir()
+       }
+       sh "npm install"
+       sh "NODE_ENV=production NODE_PATH=/usr/local/nodejs/lib/node_modules  /usr/local/nodejs/bin/npm run prd"
+       echo "read manifest.json"
+       newjson = readJSON file: '.build/manifest.json'
+       println newjson.size()
+       
+       try {
+          echo "read previous manifest.json"
+          dktxt = new URL("http://docker.changingedu.com/v2/qingqing/$context/tags/list").text
+          onlinedkjson = new groovy.json.JsonSlurperClassic().parseText(dktxt)
+          onlineversion=onlinedkjson.tags.sort()[-1]
+          println "onlineversion:${onlineversion}"
+          txt = new URL("http://livestatic.changingedu.com/manifest-${onlineversion}.json").text
+          assert true
+       } catch (Exception ex) {
+          println "http get static manifest.json error"
+          txt='{}'
+          assert true
+       }
+       echo "previous manifest.json to map"
+       onlinejson = new groovy.json.JsonSlurperClassic().parseText(txt)
+       println onlinejson.size()
+       
+       echo "diff json"
+       diffjson = newjson - onlinejson
+       println diffjson.size()
+       if (diffjson.size()>0) {
+          // clean difffdir
+          sh "rm -fr difffdir && mkdir difffdir -p"
+          for (def e in mapToList(diffjson)){
+             dir('.build'){
+               sh "cp -apR ${e.value} --parents -t ../difffdir/"
+             }
+          }
+          dir('difffdir'){
+             zip dir: '', glob: '', zipFile: "${Filename}"
+          }
+          sh "ls difffdir -l"
+       }else{
+          error "no change"   
+       }
+
+    }
+    stage "Archive"
+    // Make the output directory.
+    dir('output'){
+       // clean output
+       deleteDir()
+       // Write an useful file, which is needed to be archived.
+       sh "cp ../source/difffdir/${Filename} ${Filename}"
+       sh "cp ../source/.build/manifest.json manifest-${buildversion}.json"
+
+       // set properties
+       writeFile encoding: 'utf-8', file: 'env.properties', text: """
+jobName=$JOB_NAME
+appType=$apptype
+poolCode=$poolcode
+envType=$envtype
+buildVersion=$buildversion
+context=$context
+version=$version
+extension=
+buildUser=$Username
+"""
+       // md5sum
+       sh "md5sum ${Filename} > ${Filename}.md5"
+       // upload repo
+       sh 'ls '
+       echo "upload manifest.json"
+       sh "curl http://repo/$poolcode/ -s && curl -XMKCOL http://repo/$poolcode/$version/ -s "
+       sh "curl -T '../source/.build/manifest.json' http://repo//$poolcode/manifest-${buildversion}.json"
+       sh "curl -T '{${Filename},${Filename}.md5}' http://repo//$poolcode/$version/ "
+       // Config Dockerfile
+       sh "rm -f Dockerfile-20*"
+       sh "cp ../dockerfile/$poolcode/Dockerfile Dockerfile-$BUILD_TIMESTAMP "
+       sh "sed -i 's/@POOL_CODE@/'$poolcode'/g'    Dockerfile-$BUILD_TIMESTAMP "
+       sh "sed -i 's/@APP_VERSION@/'$version'/g'   Dockerfile-$BUILD_TIMESTAMP "
+       sh "sed -i 's/@APP_CONTEXT@/'$context'/g'   Dockerfile-$BUILD_TIMESTAMP "
+       sh "sed -i 's/@APP_BUILD_VERSION@/'${BUILD_TIMESTAMP}'/g' Dockerfile-$BUILD_TIMESTAMP "
+       sh "cat Dockerfile-$BUILD_TIMESTAMP "
+       sh "cp ../dockerfile/$poolcode/{nginx-static.conf,nginx-start.sh} ./ "
+    }
+    // share output
+    stash name: 'share_output', includes: "output/*"
+    // Archive the build output artifacts.
+    archiveArtifacts artifacts: "output/*"
+
+}
+
+// build docker
+node('docker') {
+   stage 'Create Docker'
+   dir("$version"){
+     deleteDir()
+     unstash  'share_output'
+     dir('output'){
+       sh 'ls -l '
+       sh "cat Dockerfile-$BUILD_TIMESTAMP"
+
+       Tag = "$buildversion"
+       Image = "docker.idc.cedu.cn/qingqing/${context}"
+       // docker build and push
+       sh "docker build -t $Image:$Tag -f Dockerfile-$BUILD_TIMESTAMP ."
+       sh "docker push $Image:$Tag "
+       // clearn docker image
+       sh "docker image ls"
+       sh "docker image rm -f $Image:$Tag "
+     }
+   }
+}
+
+
+@NonCPS
+def mapToList(depmap) {
+    def dlist = []
+    for (def entry2 in depmap) {
+        dlist.add(new java.util.AbstractMap.SimpleImmutableEntry(entry2.key, entry2.value))
+    }
+    dlist
+}
+
+node(){
+  // Deploy dev ?
+  if (params.envtype != "tst"){
+      echo "envtype is not tst ,  Deploy apps to $ServerIP "
+      build job: 'Deploy-dev_vm_docker', parameters: [[$class: 'StringParameterValue', name: 'ServerIP', value: "$ServerIP"],[$class: 'StringParameterValue', name: 'DockerURL', value: "$Image:$Tag"],[$class: 'StringParameterValue', name: 'appType', value: "$apptype"],[$class: 'StringParameterValue', name: 'envType', value: "$envtype"],[$class: 'StringParameterValue', name: 'context', value: "$context"],[$class: 'StringParameterValue', name: 'poolcode', value: "$poolcode"]], propagate: false, wait: false
+  }
+}

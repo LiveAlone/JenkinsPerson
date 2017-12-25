@@ -1,0 +1,6 @@
+node() {
+    // checkout Entry file
+    git url: 'http://gitlab/ops/dockerfile.git', credentialsId: '2d430f91-dfff-4b0a-85a9-a6eb2ee9f09a'
+    // load project build file
+    load "$poolcode/Jenkinsfile"
+}

@@ -1,0 +1,57 @@
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: rbd
+provisioner: kubernetes.io/rbd
+parameters:
+  monitors: 172.22.12.2:6789,172.22.12.3:6789,172.22.12.4:6789,172.22.12.5:6789,172.22.12.6:6789
+  adminId: admin
+  adminSecretName: ceph-secret-admin
+  #adminSecretNamespace: kube-system
+  pool: rbd
+  fsType: xfs
+  imageFormat: "2"
+  imageFeatures: "layering"
+  userId: admin
+  userSecretName: ceph-secret-admin
+
+// secret  # key base64 encode  :: kubectl create secret generic ceph-secret --from-literal=key='AQCnQctZYHlaOhAAVg0ep6ztyNq64P0O7cr64A=='  --type="kubernetes.io/rbd"  --namespace=kube-system
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: ceph-secret
+data:
+  key: QVFEaHRzaFoxTm5PRGhBQWhJTGx4bHRCVlduN2hnZWtYS1BHZUE9PQ==
+
+
+#---
+#apiVersion: v1
+#kind: PersistentVolume
+#metadata:
+#  name: zkdatadir
+#spec:
+#  capacity:
+#    storage: 20Gi
+#  accessModes:
+#    - ReadWriteOnce
+#  rbd:
+#    monitors:
+#      - 172.22.12.2:6789
+#      - 172.22.12.3:6789
+#      - 172.22.12.4:6789
+#      - 172.22.12.5:6789
+#      -	172.22.12.6:6789
+#    pool: rbd
+#    image: zkdata
+#    user: admin
+#    keyring: /etc/ceph/ceph.client.admin.keyring
+#    secretRef:
+#      name: ceph-secret
+#    fsType: xfs
+#    readOnly: false
+#  persistentVolumeReclaimPolicy: Retain
+
+
+更改PersistentVolume的回收策略
+kubectl patch pv <your-pv-name> -p '{"spec":{"persistentVolumeReclaimPolicy":"Retain"}}'

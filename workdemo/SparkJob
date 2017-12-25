@@ -1,0 +1,103 @@
+node(){
+    stage "Init"    
+    if (params.contex == "" || params.buildVersion == "" || params.idc == "" ){
+       error 'Args is Null'
+    }
+
+    echo "Context: $context"
+    echo "BuildVersion: $buildVersion"
+    echo "jarPath: $jarPath"
+	echo "classPath: $classPath"
+	echo "max-cpu: $num-cpu-cores"
+    echo "max-mem: $mem-per-node"
+	
+	stage "Check Apps Info"
+	AppsInfo() 
+	if true {
+	  echo "Apps is not runing"
+	}else {
+	  echo "kill application"
+	  AppsDelete
+	}
+    stage "Upload Binaries"
+	
+	UploadFiles()
+	
+	stage "Create Application"
+ 
+ 
+    echo "Sucess"
+    
+}
+
+def CreateApps (){
+
+}
+
+def AppsInfo (){
+  jobs?status=running
+}
+
+
+def AppsDelete (){
+  DELETE /contexts/<name>
+  DELETE /binaries/<appName>
+  DELETE /jobs/<jobId>
+  DELETE /data/<filename>
+}
+
+def UploadFiles (){
+  POST /binaries/<appName>
+}
+
+
+@NonCPS
+def mapToList(depmap) {
+    def dlist = []
+    for (def entry2 in depmap) {
+        dlist.add(new java.util.AbstractMap.SimpleImmutableEntry(entry2.key, entry2.value))
+    }
+    dlist
+}
+
+
+
+/*
+Jenkins 编译或部署的参数
+appType： [ java|python]， python暂不支持
+envType:  运行时环境[dev，tst，pre，prod] ，可与disconf结合,也可直接部署到对应环境
+contexts： 唯一，必填
+classPath：主方法，必填
+version：  唯一，必填，也可有jenkins编译时生成的版本号
+jarPath：  可选，依赖的jar目录或配置文件， jenkins编译后生成在jars目录下，此目录下所有文件都上传，注意sparkJobServer上已有的相同的文件会忽略上传.
+mainPath:  可选，主方法对应的文件 ，jenkin编译后生成在mainfies目录下,并且文件带版本号信息
+dataPath：可选，编程方式使用特殊的文件，如geo文件，源码在jenkins编译后的data目录下，此目录下所有文件都上传，注意sparkJobServer上已有的相同的文件会忽略上传.
+maxCpu： 可选，默认2cpu
+maxMem：可选，默认512MB
+
+
+清理历史文件
+未运行使用的历史文件3个月后删除
+
+
+设计流程：
+gitlab ---〉jenkins ---构建参数---〉产出物路径 -──〉线下环境job 提交
+                                               ├──〉spanniker ----设置对应环境以及资源 --〉jenkins job 提交
+											   ├──〉其它工作流
+											   └──〉归档存储（data、jars、mainfiles目录）
+源码以及产出物路径目录树：
+.
+├── data
+│   ├── city.txt
+│   └── phone.txt
+├── jars
+│   ├── a.jar
+│   ├── b.jar
+│   └── log4j.xml
+├── mainfiles
+│   └── testword-1.0.0.jar
+└── src
+    └── testword.java
+*/
+
+	

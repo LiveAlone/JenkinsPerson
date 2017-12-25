@@ -1,0 +1,68 @@
+---
+kind: ReplicationController
+metadata:
+  labels:
+    k8s-app: dashboard
+    name: dashboard
+  name: dashboard
+  namespace: kube-system
+spec:
+  replicas: 1
+  selector:
+    k8s-app: dashboard
+  template:
+    metadata:
+      labels:
+        k8s-app: dashboard
+    spec:
+      containers:
+      - name: dashboard
+        image: docker.idc.cedu.cn/kubernetes-dashboard:v1.6.3
+        imagePullPolicy: Always
+        command:
+        - /dashboard
+        - --apiserver-host=http://kube-api-office.idc.cedu.cn:8080 
+        - --insecure-bind-address=0.0.0.0
+        - --insecure-port=8081
+        - --heapster-host=http://heapster.ingress.idc.cedu.cn
+        livenessProbe:
+          tcpSocket:
+            port: 8081
+          initialDelaySeconds: 25
+          periodSeconds: 20
+---
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    kubernetes.io/cluster-service: 'true'
+    kubernetes.io/name: Dashboard
+  name: dashboard
+  namespace: kube-system
+spec:
+  clusterIP: None
+  ports:
+  - port: 8081
+    targetPort: 8081
+  selector:
+    k8s-app: dashboard
+  sessionAffinity: None
+  type: ClusterIP
+---
+apiVersion: extensions/v1beta1
+kind: Ingress
+metadata:
+  name: dashboard
+  namespace: kube-system
+spec:
+  backend:
+    serviceName: dashboard
+    servicePort: 8081
+  rules:
+  - host: dashboard.ingress.idc.cedu.cn
+    http:
+      paths:
+      - backend:
+          serviceName: dashboard
+          servicePort: 8081
+        path: /

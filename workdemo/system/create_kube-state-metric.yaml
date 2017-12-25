@@ -1,0 +1,67 @@
+---
+kind: ReplicationController
+metadata:
+  labels:
+    k8s-app: kube-metric
+    name: kube-metric
+  name: kube-metric
+  namespace: kube-system
+spec:
+  replicas: 1
+  selector:
+    k8s-app: kube-metric
+  template:
+    metadata:
+      labels:
+        k8s-app: kube-metric
+    spec:
+      containers:
+      - name: kube-metric
+        image: docker.idc.cedu.cn/kube-state-metrics:v1.0.0-1
+        imagePullPolicy: Always
+        command:
+        - /kube-state-metrics
+        - --apiserver=http://kube-api-office.idc.cedu.cn:8080
+        - --in-cluster=true
+        - --port=8080
+        livenessProbe:
+          tcpSocket:
+            port: 8080
+          initialDelaySeconds: 25
+          periodSeconds: 20
+---
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    kubernetes.io/cluster-service: 'true'
+    kubernetes.io/name: kube-metric
+  name: kube-metric
+  namespace: kube-system
+spec:
+  clusterIP: None
+  ports:
+  - port: 8080
+    targetPort: 8080
+  selector:
+    k8s-app: kube-metric
+  sessionAffinity: None
+  type: ClusterIP
+---
+apiVersion: extensions/v1beta1
+kind: Ingress
+metadata:
+  name: kube-metric
+  namespace: kube-system
+spec:
+  backend:
+    serviceName: kube-metric
+    servicePort: 8080
+  rules:
+  - host: kube-metric.ingress.idc.cedu.cn
+    http:
+      paths:
+      - backend:
+          serviceName: kube-metric
+          servicePort: 8080
+        path: /

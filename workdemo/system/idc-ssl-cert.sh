@@ -1,0 +1,1 @@
+kubectl create secret tls idc-ssl-cert --cert=server.crt --key=server.key

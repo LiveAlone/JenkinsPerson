@@ -1,0 +1,7 @@
+
+说明 Jenkinsfile 是基于groovy 语言，编译和部署调用shell也很方便。
+
+1、根目录下的Jenkinsfile是所有新项目编译的入口文件
+2、Jenkinsfile 根据jenkins job 编译时传入的poolcode找到对应目录下的Jenkinsfile和Dockerfile 来编译
+3、deploy_vm_docker 文件是部署办公网非集成测试环境应用的脚本，由项目编译时的参数envType != tst 触发
+4、具体介绍jenkins和docker发布部署见: https://wiki.changingedu.com/pages/viewpage.action?pageId=5417423

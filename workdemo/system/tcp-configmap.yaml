@@ -1,0 +1,9 @@
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: tcp-configmap
+data:
+  31883: "tst/mqtt:1883"
+  
+

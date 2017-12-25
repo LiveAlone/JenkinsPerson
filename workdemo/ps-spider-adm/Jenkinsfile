@@ -1,0 +1,134 @@
+node() {
+    stage 'Checkout'
+    dir('dockerfile'){
+        // clean dockerfile dir
+        deleteDir()
+        git url: 'http://gitlab/ops/dockerfile.git', credentialsId: '2d430f91-dfff-4b0a-85a9-a6eb2ee9f09a'
+    }
+    dir('source'){
+        // clean source dir
+        deleteDir()
+        // source code
+        git url: 'http://gitlab/backend/spidersvc.git', branch: "${branch}", credentialsId: '2d430f91-dfff-4b0a-85a9-a6eb2ee9f09a'
+        stage 'Chkconfig'
+        poolcode = "${poolcode}"
+        buildversion = "${BUILD_TIMESTAMP}-${BUILD_NUMBER}"
+        //default output file 
+        buildfile = "spider-admin/target/spideradmin.war"
+        //archive file name
+        Filename = "${context}-${version}-${buildversion}.war"
+        // set build username
+        wrap([$class: 'BuildUser']) {
+            Username = env.BUILD_USER_ID
+        }
+        echo "poolCode:$poolcode"
+        echo "appType:$apptype"
+        echo "version:$version"
+        echo "context:$context"
+        echo "branch:$branch"
+        echo "buildVersion:$buildversion"
+        echo "envType:$envtype"
+
+        if (params.platform == null ){
+           platform= "vmdocker"
+        }
+        echo "buildUser:$Username"
+        
+        stage 'Building'
+        def mvnHome = tool name: 'Maven3', type: 'maven'
+        sh "${mvnHome}/bin/mvn -B $maven_args"
+    }
+    stage "Archive"
+    // Make the output directory.
+    dir('output'){
+       // clean output
+       deleteDir()
+       // Write an useful file, which is needed to be archived.
+       sh "cp ../source/$buildfile $Filename"
+       // set properties
+       writeFile encoding: 'utf-8', file: 'env.properties', text: """
+POOL_CODE=$poolcode
+APP_VERSION=$version
+APP_BUILD_VERSION=$buildversion
+APP_CONTEXT=$context
+"""
+       writeFile encoding: 'utf-8', file: 'disconf.properties', text: """
+disconf.enable.remote.conf=true
+disconf.conf_server_host=disconf.idc.cedu.cn
+disconf.version=1.0.0
+disconf.app=$poolcode
+disconf.ignore=
+disconf.conf_server_url_retry_times=3
+disconf.conf_server_url_retry_sleep_seconds=60
+disconf.enable_local_download_dir_in_class_path=false
+disconf.user_define_download_dir=/home/qingqing/data/conf/
+"""
+       //add env.properties and disconf.properties to WEB-INF/classes/
+       sh "install -D env.properties WEB-INF/classes/env.properties"
+       sh "install -D disconf.properties WEB-INF/classes/disconf.properties"
+       sh "zip -ur $Filename WEB-INF"
+       sh "rm -fr WEB-INF env.properties"
+       // md5sum
+       sh "md5sum ${Filename} > ${Filename}.md5"
+       // upload repo
+       sh 'ls '
+       sh "curl http://repo/$poolcode/ -s && curl -XMKCOL http://repo/$poolcode/$version/ -s "
+       sh "curl -T '{${Filename},${Filename}.md5}' http://repo//$poolcode/$version/ "
+       // Config Dockerfile
+       sh "rm -f Dockerfile-20*"
+       sh "cp ../dockerfile/$poolcode/Dockerfile Dockerfile-$BUILD_TIMESTAMP "
+       sh "sed -i 's/@POOL_CODE@/'$poolcode'/g'  Dockerfile-$BUILD_TIMESTAMP "
+       sh "sed -i 's/@APP_VERSION@/'$version'/g' Dockerfile-$BUILD_TIMESTAMP "
+       sh "sed -i 's/@APP_CONTEXT@/'$context'/g' Dockerfile-$BUILD_TIMESTAMP "
+       sh "sed -i 's/@APP_BUILD_VERSION@/'$buildversion'/g' Dockerfile-$BUILD_TIMESTAMP "
+       sh "cat Dockerfile-$BUILD_TIMESTAMP "
+
+       // set properties to spinnaker
+       writeFile encoding: 'utf-8', file: 'env.properties', text: """
+jobName=$JOB_NAME
+appType=$apptype
+poolCode=$poolcode
+envType=$envtype
+buildVersion=$buildversion
+context=$context
+version=$version
+extension=
+buildUser=$Username
+"""
+    }
+    // share output
+    stash name: 'share_output', includes: "output/*"
+    // Archive the build output artifacts.
+    archiveArtifacts artifacts: "output/*"
+    
+}
+
+// build docker
+node('docker') {
+   stage 'Create Docker'
+   dir("$version"){
+     deleteDir()
+     unstash  'share_output'
+     dir('output'){
+        sh 'ls -l '
+        sh "cat Dockerfile-$BUILD_TIMESTAMP"
+
+        Tag = "$buildversion"
+        Image = "docker.idc.cedu.cn/qingqing/${context}"
+        // docker build and push
+        sh "docker build -t $Image:$Tag -f Dockerfile-$BUILD_TIMESTAMP ."
+        sh "docker push $Image:$Tag "
+        // clearn docker image
+        sh "docker image ls"
+        sh "docker image rm -f $Image:$Tag "
+     }
+   }
+}
+
+node(){
+  // Deploy dev ?
+  if (params.envtype != "tst"){
+      echo "envtype is not tst ,  Deploy apps to $ServerIP "
+      build job: 'Deploy-dev_vm_docker', parameters: [[$class: 'StringParameterValue', name: 'ServerIP', value: "$ServerIP"],[$class: 'StringParameterValue', name: 'DockerURL', value: "$Image:$Tag"],[$class: 'StringParameterValue', name: 'appType', value: "$apptype"],[$class: 'StringParameterValue', name: 'envType', value: "$envtype"],[$class: 'StringParameterValue', name: 'context', value: "$context"],[$class: 'StringParameterValue', name: 'poolcode', value: "$poolcode"],[$class: 'StringParameterValue', name: 'platform', value: "$platform"]], propagate: false, wait: false
+  }
+}

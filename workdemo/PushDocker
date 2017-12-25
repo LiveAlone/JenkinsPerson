@@ -1,0 +1,37 @@
+node('docker'){
+    stage "Init"    
+    if (params.contex == "" || params.buildVersion == "" || params.idc == "" ){
+       error 'Args is Null'
+    }
+    
+    echo "Context: $context"
+    echo "BuildVersion: $buildVersion"
+    echo "idc: $idc"
+    DockerPullUrl = "docker.idc.cedu.cn/qingqing/${context}:${buildVersion}"
+    echo "DockerPullUrl:$DockerPullUrl"
+    switch(idc){
+        case "shjy":
+            DockerPreUrl="docker.changingedu.com/qingqing"
+            break
+        case "bjtx":
+            DockerPreUrl="docker-bjtx.changingedu.com/qingqing"
+            break
+        default :  error 'Error idc'
+    }    
+    DockerPushUrl="$DockerPreUrl/${context}:${buildVersion}"
+    echo "DockerPushUrl:$DockerPreUrl"
+    
+    stage 'docker pull'
+    sh "docker pull $DockerPullUrl"
+    stage 'docker tag'
+    sh "docker tag $DockerPullUrl $DockerPushUrl"
+
+    stage 'docker push'
+    sh "docker push $DockerPushUrl"
+    
+    stage 'docker remove'
+    sh "docker rmi -f $DockerPullUrl $DockerPushUrl"
+    
+    echo "Sucess"
+    
+}

@@ -1,0 +1,69 @@
+---
+kind: ReplicationController
+metadata:
+  labels:
+    k8s-app: heapster
+    name: heapster
+  name: heapster
+  namespace: kube-system
+spec:
+  replicas: 1
+  selector:
+    k8s-app: heapster
+  template:
+    metadata:
+      labels:
+        k8s-app: heapster
+    spec:
+      containers:
+      - name: heapster
+        image: docker.idc.cedu.cn/heapster:v1.4.2
+        imagePullPolicy: Always
+        command:
+        - /heapster
+        - --source=kubernetes:http://kube-api-office.idc.cedu.cn:8080?inClusterConfig=false
+        - --secure-port=0
+        livenessProbe:
+          tcpSocket:
+            port: 8082
+          initialDelaySeconds: 15
+          periodSeconds: 10
+---
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    kubernetes.io/cluster-service: 'true'
+    kubernetes.io/name: Heapster
+  name: heapster
+  namespace: kube-system
+spec:
+  clusterIP: None
+  ports:
+  - name: http
+    port: 8082
+    targetPort: 8082
+  selector:
+    k8s-app: heapster
+  sessionAffinity: None
+  type: ClusterIP
+  
+--- 
+apiVersion: extensions/v1beta1
+kind: Ingress
+metadata:
+  name: heapster
+  namespace: kube-system
+spec:
+  backend:
+    serviceName: heapster
+    servicePort: 8082
+  rules:
+  - host: heapster.ingress.idc.cedu.cn
+    http:
+      paths:
+      - backend:
+          serviceName: heapster
+          servicePort: 8082
+        path: /
+
