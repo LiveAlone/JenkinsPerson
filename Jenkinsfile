@@ -7,7 +7,7 @@ node() {
         sh 'mvn clean package -Dmaven.test.skip=true'
         dir('target'){
             stage 'deploy'
-            sh 'java -jar boot-demo-1.0-SNAPSHOT.jar \> log.file \&'
+            sh 'nohup java -jar boot-demo-1.0-SNAPSHOT.jar'
         }
     }
 }
