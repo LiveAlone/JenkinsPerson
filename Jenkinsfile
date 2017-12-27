@@ -20,6 +20,6 @@ node() {
         stage 'deploy'
         sh 'docker stop localimage'
         sh 'docker rm localimage || true'
-        sh 'docker run -d -p 8080 localimage'
+        sh 'docker run -d -p 127.0.0.1:8080:8080 localimage'
     }
 }
