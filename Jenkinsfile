@@ -18,7 +18,7 @@ node() {
         sh 'docker build -t localimage .'
         // sh 'nohup java -jar boot-demo-1.0-SNAPSHOT.jar'
         stage 'deploy'
-        sh 'docker stop localimage'
+        sh 'docker stop localimage || true'
         sh 'docker rm localimage || true'
         sh 'docker run -d -p 127.0.0.1:8080:8080 localimage'
     }
