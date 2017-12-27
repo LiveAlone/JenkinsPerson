@@ -14,7 +14,7 @@ node() {
         sh 'cp ../source/target/boot-demo-1.0-SNAPSHOT.jar .'
         sh 'cp ../dockerfile/Dockerfile .'
         stage 'create image'
-        sh 'docker rmi localimage'
+        sh 'docker rmi localimage || true'
         sh 'docker build -t localimage .'
         // sh 'nohup java -jar boot-demo-1.0-SNAPSHOT.jar'
         stage 'deploy'
