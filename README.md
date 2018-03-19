@@ -9,3 +9,6 @@
 ## start
 
 jenkins study 基础脚本
+
+## jvm 对应启动参数的命令配置
+参见 DockerFile 中 java 对应的启动命令方式
